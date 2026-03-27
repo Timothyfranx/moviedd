@@ -12,6 +12,11 @@ session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 })
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import fzseries_api.hunter
+fzseries_api.hunter.session.verify = False
+
 from fzseries_api import Search, TVSeriesMetadata, EpisodeMetadata, Download, Auto
 
 def interactive_downloader():
