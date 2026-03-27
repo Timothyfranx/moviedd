@@ -1,10 +1,18 @@
 import os
+import requests
+import time
+from pathlib import Path
 
 # Set a working domain for the API before importing fzseries_api
 os.environ["FZSERIES_DEFAULT_SITE"] = "https://fztvseries.live/"
 
+# Try to force a better User-Agent for requests
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+})
+
 from fzseries_api import Search, TVSeriesMetadata, EpisodeMetadata, Download, Auto
-from pathlib import Path
 
 def interactive_downloader():
     print("=== FZSeries Downloader ===")
@@ -75,16 +83,18 @@ def interactive_downloader():
         for i, episode in enumerate(episodes):
             print(f"[{i + 1}/{len(episodes)}] {episode.title}")
             try:
-                # Use Auto's static method for clean directory handling
-                # or Download class directly for more control.
-                # Auto.download_episode handles the series/season folder nesting automatically.
-                Auto.download_episode(
-                    episode=episode,
-                    directory=save_path,
+                # Direct download control
+                dl_manager = Download(episode)
+                final_url = dl_manager.last_url
+                Download.save(
+                    link=final_url,
+                    filename=f"{episode.title}.mp4",
+                    dir=save_path,
                     progress_bar=True,
-                    include_metadata=True,
-                    quiet=False
+                    timeout=60
                 )
+                # Small delay to avoid anti-bot detection
+                time.sleep(3)
             except Exception as e:
                 print(f"  Error downloading episode: {e}")
                 continue
