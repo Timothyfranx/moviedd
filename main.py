@@ -1,7 +1,20 @@
 import os
 import requests
 import time
+import re
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from rich.progress import (
+    Progress,
+    BarColumn,
+    TextColumn,
+    DownloadColumn,
+    TransferSpeedColumn,
+    TimeRemainingColumn,
+    SpinnerColumn
+)
 
 # Set a working domain for the API before importing fzseries_api
 os.environ["FZSERIES_DEFAULT_SITE"] = "https://fztvseries.live/"
@@ -12,12 +25,77 @@ session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 })
 
+# Increase connection pool size for faster concurrent downloads
+adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=3)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
+
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import fzseries_api.hunter
 fzseries_api.hunter.session.verify = False
 
 from fzseries_api import Search, TVSeriesMetadata, EpisodeMetadata, Download, Auto
+
+def download_file(episode, save_path, progress, task_id, jitter=0):
+    """Worker function to download an episode with its own progress bar."""
+    if jitter:
+        time.sleep(jitter)
+        
+    full_path = None
+    try:
+        # Get the download URL - Try alternate link (index 1) for potentially better speeds
+        dl_manager = Download(episode)
+        try:
+            dl_manager.final_download_link_index = 1
+            url = dl_manager.last_url
+        except:
+            url = dl_manager.last_url
+            
+        if not url:
+            raise ValueError("Could not retrieve a valid download URL.")
+        
+        # Sanitize filename for Windows
+        clean_title = re.sub(r'[<>:"/\\|?*]', '_', episode.title)
+        filename = f"{clean_title}.mp4"
+        full_path = Path(save_path) / filename
+
+        # Update description to active status
+        progress.update(task_id, description=f"[cyan]Downloading: {episode.title}")
+
+        # Stream the download using the global session
+        response = session.get(url, stream=True, verify=False, timeout=60)
+        response.raise_for_status()
+        
+        try:
+            total_size = int(response.headers.get('content-length', 0))
+        except (ValueError, TypeError):
+            total_size = 0
+            
+        progress.update(task_id, total=total_size, visible=True)
+
+        with open(full_path, "wb") as f:
+            # Aggressive 1MB chunks for high-speed streaming
+            for chunk in response.iter_content(chunk_size=1024 * 1024): 
+                if chunk:
+                    f.write(chunk)
+                    progress.update(task_id, advance=len(chunk))
+        
+        progress.update(task_id, description=f"[green]✓ {episode.title}")
+        time.sleep(0.5) 
+        progress.update(task_id, visible=False)
+        return True
+    except Exception as e:
+        progress.update(task_id, description=f"[red]✗ Error: {episode.title}")
+        # Clean up partial file on failure
+        try:
+            if full_path and full_path.exists():
+                full_path.unlink()
+        except:
+            pass
+        time.sleep(2)
+        progress.update(task_id, visible=False)
+        return False
 
 def interactive_downloader():
     print("=== FZSeries Downloader ===")
@@ -57,54 +135,79 @@ def interactive_downloader():
     for s in seasons:
         print(f"Season {s.number}: {s.identity}")
 
-    season_str = input(f"\nEnter season number to download (1-{len(seasons)}, default 1): ").strip()
-    season = int(season_str) if season_str.isdigit() else 1
+    season_str = input(f"\nEnter season number to download (1-{len(seasons)}, or type 'all'): ").strip().lower()
     
-    # Validate season
-    if not any(s.number == season for s in seasons):
-        print(f"Season {season} not found. Defaulting to Season 1.")
-        season = 1
+    selected_seasons = []
+    if season_str == 'all':
+        selected_seasons = seasons
+    else:
+        try:
+            num = int(season_str) if season_str else 1
+            target = next((s for s in seasons if s.number == num), seasons[0])
+            selected_seasons = [target]
+        except:
+            print("Invalid input. Defaulting to Season 1.")
+            selected_seasons = [seasons[0]]
 
     save_path = input(f"Enter download folder (default './downloads'): ").strip() or "downloads"
+    # Create a subfolder for the specific series to keep things organized
+    clean_series_name = re.sub(r'[<>:"/\\|?*]', '_', selected_show.title)
+    save_path = os.path.join(save_path, clean_series_name)
     os.makedirs(save_path, exist_ok=True)
 
-    print(f"\nInitializing download for: {selected_show.title} - Season {season}")
-    print(f"Files will be saved to: {os.path.abspath(save_path)}")
-
     try:
-        # Get the specific season object
-        target_season = next((s for s in seasons if s.number == season), seasons[0])
-        
-        print(f"Fetching episodes for {target_season.identity}...")
-        episode_results = EpisodeMetadata(target_season).results
-        episodes = episode_results.episodes
+        # Gather all episodes from selected seasons
+        print(f"\nGathering metadata for '{selected_show.title}'...")
+        all_episodes = []
+        for s in selected_seasons:
+            print(f"  Fetching Season {s.number}...")
+            episode_results = EpisodeMetadata(s).results
+            all_episodes.extend(episode_results.episodes)
 
-        if not episodes:
-            print(f"No episodes found for Season {season}.")
+        if not all_episodes:
+            print("No episodes found to download.")
             return
 
-        print(f"Found {len(episodes)} episodes. Starting download...\n")
+        print(f"\nReady to download {len(all_episodes)} episodes.")
+        concurrency = input("How many parallel downloads? (default 3): ").strip()
+        max_workers = int(concurrency) if concurrency.isdigit() and int(concurrency) > 0 else 3
 
-        for i, episode in enumerate(episodes):
-            print(f"[{i + 1}/{len(episodes)}] {episode.title}")
-            try:
-                # Direct download control
-                dl_manager = Download(episode)
-                final_url = dl_manager.last_url
-                Download.save(
-                    link=final_url,
-                    filename=f"{episode.title}.mp4",
-                    dir=save_path,
-                    progress_bar=True,
-                    timeout=60
-                )
-                # Small delay to avoid anti-bot detection
-                time.sleep(3)
-            except Exception as e:
-                print(f"  Error downloading episode: {e}")
-                continue
+        # Use Rich Progress for a nice UI
+        progress = Progress(
+            TextColumn("[bold blue]{task.description}", justify="right"),
+            BarColumn(bar_width=None),
+            "[progress.percentage]{task.percentage:>3.1f}%",
+            "•",
+            DownloadColumn(),
+            "•",
+            TransferSpeedColumn(),
+            "•",
+            TimeRemainingColumn(),
+        )
 
-        print("\n=== Download Task Completed ===")
+        with progress:
+            # Master task for overall progress
+            overall_task = progress.add_task(f"[bold yellow]Overall Progress (0/{len(all_episodes)})", total=len(all_episodes))
+            
+            # Function to wrap worker and update overall progress
+            def worker_wrapper(episode, idx):
+                # Create a task for this specific episode
+                task_id = progress.add_task(f"Queued: {episode.title}", visible=False)
+                # Add small jitter to stagger starts
+                jitter = (idx % max_workers) * 0.5 
+                success = download_file(episode, save_path, progress, task_id, jitter=jitter)
+                
+                # Update overall task description with current count
+                completed = progress.tasks[overall_task].completed + 1
+                progress.update(overall_task, advance=1, description=f"[bold yellow]Overall Progress ({completed}/{len(all_episodes)})")
+                return success
+
+            # Execute using ThreadPool
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Map episodes to worker wrapper
+                list(executor.map(lambda x: worker_wrapper(x[1], x[0]), enumerate(all_episodes)))
+
+        print("\n=== All Download Tasks Completed ===")
 
     except KeyboardInterrupt:
         print("\nDownload cancelled by user.")
