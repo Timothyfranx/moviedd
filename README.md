@@ -1,17 +1,18 @@
-# FZSeries Interactive Downloader
+# Merlin Series & Anime Downloader
 
-An interactive command-line interface for downloading TV series from `fztvseries.live` using the `fzseries-api` library.
+An interactive command-line interface for downloading TV series and Anime.
 
 ## Features
-- Search for any TV series by name.
-- Choose from multiple search results.
-- List all available seasons for a selected show.
-- Download a specific season or start from any season/episode.
-- Real-time download progress bar.
-- Automatic directory management (organized by Show/Season).
+- **TV Series**: Download from FZSeries with automatic organization.
+- **Anime**: Download from AllAnime with quality selection (360p to 1080p).
+- **Quality Control**: Choose lower resolutions for Anime to save space.
+- **Parallel Downloads**: Faster downloads with configurable concurrency.
+- **Real-time Progress**: Detailed progress bars for overall and individual tasks.
 
 ## Prerequisites
 - Python 3.10 or higher.
+- **FFmpeg**: Required for Anime downloading (merging segments).
+  - The Anime script is configured to look for `ffmpeg.exe` and `ffprobe.exe` in a `bin/` folder in the project root.
 
 ## Setup Instructions
 
@@ -22,18 +23,9 @@ cd merlin
 ```
 
 ### 2. Create a Virtual Environment
-It is highly recommended to use a virtual environment to avoid dependency conflicts.
-
-**On Windows:**
 ```powershell
 python -m venv venv
 .\venv\Scripts\activate
-```
-
-**On Linux/macOS:**
-```bash
-python3 -m venv venv
-source venv/bin/activate
 ```
 
 ### 3. Install Dependencies
@@ -41,27 +33,27 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### 4. FFmpeg Setup (For Anime)
+If you want to download Anime, you need FFmpeg binaries in the `bin/` folder:
+1. Create a `bin` folder.
+2. Download FFmpeg essentials from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/).
+3. Place `ffmpeg.exe` and `ffprobe.exe` inside the `bin/` folder.
+
 ## Usage
 
-Simply run the `main.py` script:
+### TV Series (FZSeries)
 ```bash
 python main.py
 ```
 
-### Steps:
-1. **Enter the TV Series Name**: Type the name of the show you want to find.
-2. **Select the Show**: If multiple shows match your query, pick the correct one by entering its number.
-3. **Select a Season**: The script will list all available seasons. Enter the number of the season you want to download.
-4. **Set Download Folder**: Enter the path where you want to save the files (default is `./downloads`).
-5. **Wait for Download**: The script will automatically fetch and download all episodes in that season with a visible progress bar.
-
-## Project Structure
-- `main.py`: The main entry point for the interactive downloader.
-- `requirements.txt`: List of necessary Python packages.
-- `test_interactive.py`: A script to test the search and selection logic without downloading massive files.
+### Anime (AllAnime)
+```bash
+python anime_dl.py
+```
 
 ## Credits
-This project uses the [fzseries-api](https://github.com/Simatwa/fzseries-api) developed by Smartwa.
+- [fzseries-api](https://github.com/Simatwa/fzseries-api)
+- [anipy-api](https://github.com/sdaqo/anipy-api)
 
 ---
 **Disclaimer**: This tool is for educational purposes only. Please respect the copyright of the content owners.

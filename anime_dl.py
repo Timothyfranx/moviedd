@@ -3,11 +3,6 @@ import os
 import re
 import sys
 from pathlib import Path
-
-# Add local bin to PATH for ffmpeg
-bin_path = str(Path(__file__).parent / "bin")
-if bin_path not in os.environ["PATH"]:
-    os.environ["PATH"] = bin_path + os.path.pathsep + os.environ["PATH"]
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.progress import (
@@ -21,28 +16,28 @@ from rich.progress import (
 from anipy_api.provider import get_provider, LanguageTypeEnum
 from anipy_api.download import Downloader
 
+# Add local bin to PATH for ffmpeg
+bin_path = str(Path(__file__).parent / "bin")
+if bin_path not in os.environ["PATH"]:
+    os.environ["PATH"] = bin_path + os.path.pathsep + os.environ["PATH"]
+
 console = Console()
 
 async def download_episode(video, save_path, progress, task_id, episode_title):
     """Download a single episode using anipy-api Downloader."""
     try:
-        # Sanitize filename
         clean_title = re.sub(r'[<>:"/\\|?*]', '_', episode_title)
-        # anipy-api download() expects path WITHOUT suffix
         file_path = Path(save_path) / clean_title
         
-        # Callback to update rich progress
         def progress_cb(percentage):
             progress.update(task_id, completed=percentage, visible=True)
 
-        # Downloader needs callbacks for info and progress
         dl = Downloader(
             progress_callback=progress_cb,
             info_callback=lambda msg, exc=None: None,
             soft_error_callback=lambda msg, exc=None: None
         )
         
-        # anipy-api download is synchronous/blocking requests-based
         await asyncio.to_thread(dl.download, video, file_path, container=".mp4", ffmpeg=True)
         
         progress.update(task_id, description=f"[green]✓ {episode_title}")
@@ -52,7 +47,7 @@ async def download_episode(video, save_path, progress, task_id, episode_title):
         return False
 
 async def main():
-    console.print("[bold magenta]=== Anime Downloader (anipy-api) ===[/bold magenta]\n")
+    console.print("[bold magenta]=== Anime Downloader (Small Size Mode) ===[/bold magenta]\n")
     
     query = Prompt.ask("Enter anime name")
     
@@ -68,7 +63,6 @@ async def main():
         console.print("[red]No results found.")
         return
 
-    # Selection
     for i, res in enumerate(search_results[:10]):
         langs = ", ".join([str(l) for l in res.languages])
         console.print(f"[[bold cyan]{i+1}[/bold cyan]] {res.name} ({langs})")
@@ -77,7 +71,6 @@ async def main():
     idx = int(choice) - 1 if choice.isdigit() and 0 < int(choice) <= len(search_results) else 0
     selected_anime = search_results[idx]
     
-    # Pick language
     lang = LanguageTypeEnum.SUB
     if LanguageTypeEnum.DUB in selected_anime.languages:
         if Prompt.ask("Dub available. Use Dub?", choices=["y", "n"], default="n") == "y":
@@ -92,7 +85,27 @@ async def main():
 
     console.print(f"[green]Found {len(episodes)} episodes.")
     
-    # Range selection
+    # Check resolutions for the first episode to let user choose
+    console.print("[yellow]Checking available qualities...")
+    first_ep = episodes[0]
+    videos = await asyncio.to_thread(provider.get_video, selected_anime.identifier, first_ep, lang)
+    
+    if not videos:
+        console.print("[red]Could not fetch qualities. Proceeding with defaults.")
+        res_idx = 0
+    else:
+        # Sort by resolution ascending (lowest first for small size)
+        videos.sort(key=lambda x: x.resolution)
+        
+        console.print("\nAvailable Qualities (Lower = Smaller size):")
+        for i, v in enumerate(videos):
+            console.print(f"[[bold cyan]{i+1}[/bold cyan]] {v.resolution}p")
+            
+        res_choice = Prompt.ask("Select quality (choose 1 for smallest)", default="1")
+        res_idx = int(res_choice) - 1 if res_choice.isdigit() and 0 < int(res_choice) <= len(videos) else 0
+        preferred_resolution = videos[res_idx].resolution
+        console.print(f"[green]Selected {preferred_resolution}p quality.")
+
     range_str = Prompt.ask(
         f"Enter episode range (e.g. '1-12', '5', or 'all')", 
         default="all"
@@ -144,15 +157,16 @@ async def main():
             async with semaphore:
                 task_id = progress.add_task(f"Ep {ep_num}", visible=False, total=100)
                 try:
-                    videos = await asyncio.to_thread(provider.get_video, selected_anime.identifier, ep_num, lang)
-                    if not videos:
+                    vids = await asyncio.to_thread(provider.get_video, selected_anime.identifier, ep_num, lang)
+                    if not vids:
                         progress.update(overall_task, advance=1)
                         return
                     
-                    selected_video = videos[0]
+                    # Try to find the matching resolution, otherwise fallback to index selected
+                    match = next((v for v in vids if v.resolution == preferred_resolution), vids[0])
                     
                     success = await download_episode(
-                        selected_video, 
+                        match, 
                         anime_folder, 
                         progress, 
                         task_id, 
