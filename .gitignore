@@ -1,0 +1,19 @@
+# Environments
+venv/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Binaries
+bin/
+
+# Local data/downloads
+downloads/
+test_dl/
+
+# OS specific
+.DS_Store
+Thumbs.db

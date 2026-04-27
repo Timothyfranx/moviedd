@@ -26,22 +26,27 @@ session.headers.update({
 })
 
 # Increase connection pool size for faster concurrent downloads
-adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=3)
+retry_strategy = Retry(
+    total=5,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+)
+adapter = HTTPAdapter(pool_connections=100, pool_maxsize=100, max_retries=retry_strategy)
 session.mount("http://", adapter)
 session.mount("https://", adapter)
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import fzseries_api.hunter
+# Sync the API session with our high-speed settings
+fzseries_api.hunter.session.mount("http://", adapter)
+fzseries_api.hunter.session.mount("https://", adapter)
 fzseries_api.hunter.session.verify = False
 
 from fzseries_api import Search, TVSeriesMetadata, EpisodeMetadata, Download, Auto
 
-def download_file(episode, save_path, progress, task_id, jitter=0):
+def download_file(episode, save_path, progress, task_id):
     """Worker function to download an episode with its own progress bar."""
-    if jitter:
-        time.sleep(jitter)
-        
     full_path = None
     try:
         # Get the download URL - Try alternate link (index 1) for potentially better speeds
@@ -156,21 +161,26 @@ def interactive_downloader():
     os.makedirs(save_path, exist_ok=True)
 
     try:
-        # Gather all episodes from selected seasons
+        # Gather all episodes from selected seasons in parallel
         print(f"\nGathering metadata for '{selected_show.title}'...")
         all_episodes = []
-        for s in selected_seasons:
+        
+        def fetch_season_episodes(s):
             print(f"  Fetching Season {s.number}...")
-            episode_results = EpisodeMetadata(s).results
-            all_episodes.extend(episode_results.episodes)
+            return EpisodeMetadata(s).results.episodes
+
+        with ThreadPoolExecutor(max_workers=len(selected_seasons) if selected_seasons else 1) as metadata_executor:
+            results = list(metadata_executor.map(fetch_season_episodes, selected_seasons))
+            for eps in results:
+                all_episodes.extend(eps)
 
         if not all_episodes:
             print("No episodes found to download.")
             return
 
         print(f"\nReady to download {len(all_episodes)} episodes.")
-        concurrency = input("How many parallel downloads? (default 3): ").strip()
-        max_workers = int(concurrency) if concurrency.isdigit() and int(concurrency) > 0 else 3
+        concurrency = input("How many parallel downloads? (default 10): ").strip()
+        max_workers = int(concurrency) if concurrency.isdigit() and int(concurrency) > 0 else 10
 
         # Use Rich Progress for a nice UI
         progress = Progress(
@@ -193,9 +203,7 @@ def interactive_downloader():
             def worker_wrapper(episode, idx):
                 # Create a task for this specific episode
                 task_id = progress.add_task(f"Queued: {episode.title}", visible=False)
-                # Add small jitter to stagger starts
-                jitter = (idx % max_workers) * 0.5 
-                success = download_file(episode, save_path, progress, task_id, jitter=jitter)
+                success = download_file(episode, save_path, progress, task_id)
                 
                 # Update overall task description with current count
                 completed = progress.tasks[overall_task].completed + 1

@@ -1,59 +1,58 @@
-# Merlin Series & Anime Downloader
+# Merlin: High-Speed Series & Anime Downloader 🚀
 
-An interactive command-line interface for downloading TV series and Anime.
+An advanced, interactive command-line tool for downloading TV Series and Anime, meticulously optimized for high-performance internet connections like **Starlink**.
 
-## Features
-- **TV Series**: Download from FZSeries with automatic organization.
-- **Anime**: Download from AllAnime with quality selection (360p to 1080p).
-- **Quality Control**: Choose lower resolutions for Anime to save space.
-- **Parallel Downloads**: Faster downloads with configurable concurrency.
-- **Real-time Progress**: Detailed progress bars for overall and individual tasks.
+## 🌟 Key Features
 
-## Prerequisites
-- Python 3.10 or higher.
-- **FFmpeg**: Required for Anime downloading (merging segments).
-  - The Anime script is configured to look for `ffmpeg.exe` and `ffprobe.exe` in a `bin/` folder in the project root.
+- **Turbo Download Mode**: Pre-configured with a large connection pool (100+) and optimized concurrency (default 10+ threads) to maximize your bandwidth.
+- **TV Series (FZSeries)**: Full season downloads with automatic metadata gathering and organization.
+- **Anime (AllAnime)**: Quality selection ranging from 360p to 1080p with automatic segment merging via FFmpeg.
+- **Smart Retries**: Robust error handling with exponential backoff to bypass server-side rate limiting.
+- **Elegant UI**: Real-time progress bars for both individual episodes and overall season progress using `rich`.
 
-## Setup Instructions
+## 🛠️ Setup Instructions (Linux Mint / Ubuntu)
 
-### 1. Clone the repository
+### 1. System Prerequisites
+Ensure you have Python 3.10+ and FFmpeg installed on your system:
 ```bash
-git clone <your-repo-url>
-cd merlin
+sudo apt update
+sudo apt install python3-venv ffmpeg -y
 ```
 
-### 2. Create a Virtual Environment
-```powershell
-python -m venv venv
-.\venv\Scripts\activate
-```
-
-### 3. Install Dependencies
+### 2. Installation
+Clone the repository and set up the local environment:
 ```bash
+git clone https://github.com/Timothyfranx/moviedd.git
+cd moviedd
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. FFmpeg Setup (For Anime)
-If you want to download Anime, you need FFmpeg binaries in the `bin/` folder:
-1. Create a `bin` folder.
-2. Download FFmpeg essentials from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/).
-3. Place `ffmpeg.exe` and `ffprobe.exe` inside the `bin/` folder.
+## 🚀 Usage
 
-## Usage
-
-### TV Series (FZSeries)
+### TV Series Downloader
 ```bash
-python main.py
+python3 main.py
+```
+*Tip: When prompted for parallel downloads, use **10-20** for high-speed connections.*
+
+### Anime Downloader
+```bash
+python3 anime_dl.py
 ```
 
-### Anime (AllAnime)
-```bash
-python anime_dl.py
-```
+## 🔧 Optimization Notes
 
-## Credits
-- [fzseries-api](https://github.com/Simatwa/fzseries-api)
-- [anipy-api](https://github.com/sdaqo/anipy-api)
+If you are on a **200Mbps+ connection (Starlink)** and still experiencing slow speeds:
+1. Increase **Parallel Downloads** to 30+.
+2. Ensure you are downloading to an **SSD** rather than an HDD or USB drive.
+3. If server-side throttling is suspected, installing `aria2` can further improve segment-based speeds.
+
+## 🤝 Credits
+- **fzseries-api**: Core metadata and link extraction for TV series.
+- **anipy-api**: Anime stream provider and downloader.
+- **Rich**: Beautiful CLI progress reporting.
 
 ---
-**Disclaimer**: This tool is for educational purposes only. Please respect the copyright of the content owners.
+**Disclaimer**: This project is for educational and personal use only. Users are responsible for complying with the terms of service of the content providers.
